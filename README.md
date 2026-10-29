@@ -19,6 +19,26 @@ A ROS 2 simulation in which a Clearpath Jackal navigates around a parked Toyota 
 | Jackal model | j100_0000/robot |
 | Car model | prius_01 |
 
+## Project structure
+
+```text
+jackal-prius-navigation/
+├── README.md
+├── jvg_astar_det.py
+├── config/
+│   └── robot.yaml
+├── worlds/
+│   └── jackal_lab.sdf
+└── models/
+    └── prius_hybrid/
+        ├── prius_static.sdf
+        └── meshes/
+            └── Hybrid.obj
+```
+
+Run the asset installation commands from `jackal-prius-navigation/`.
+Keep any additional materials and textures referenced by the Prius model
+inside `models/prius_hybrid/`, preserving their relative paths.
 ## Implementation
 
 ### 1. Car and robot pose
@@ -58,46 +78,41 @@ Commands use geometry_msgs/msg/TwistStamped on:
 /j100_0000/platform/cmd_vel
 ```
 
-The ROS timer publishes at 10 Hz. Maximum configured speeds are 0.6 m/s linear and 0.8 rad/s angular. Final position and yaw tolerances are 0.15 m and 0.06 rad. These values are controller settings, not measured accuracy claims.
+The ROS timer publishes at 10 Hz. Maximum configured speeds are 0.6 m/s linear and 0.8 rad/s angular. Final position and yaw tolerances are 0.15 m and 0.06 rad. These values are controller settings. The script includes pose-query retries, a stale-command stop, a navigation timeout and a no-movement check.
 
-The script includes pose-query retries, a stale-command stop, a navigation timeout and a no-movement check.
-
-## What sensors does Jackal use?
+## Sensors?
 
 The navigation script does not subscribe to camera, LiDAR, IMU, GPS or wheel-odometry topics. Its feedback comes from Gazebo model poses.
+The Clearpath model can be configured separately. The navigation demonstrated here does not rely on sensor-based vehicle perception or robot localization.
 
-The Clearpath model can be configured separately, but the original robot.yaml is not included here, so this README does not claim a particular active sensor configuration. The navigation demonstrated here does not rely on sensor-based vehicle perception or robot localization.
+## Simulation assets and setup
 
-## Setup and execution
+This repository includes the configuration and model assets used in the demonstration:
 
-With ROS 2 Jazzy installed and the appropriate package repositories configured:
+- [Jackal](config/robot.yaml)
+- [gazebo world](worlds/jackal_lab.sdf)
+- [prius model](models/prius_hybrid/prius_static.sdf)
+- [prius mesh](models/prius_hybrid/meshes/Hybrid.obj)
 
-```bash
-source /opt/ros/jazzy/setup.bash
-sudo apt update
-sudo apt install ros-jazzy-ros-gz ros-jazzy-clearpath-simulator
-```
+The Prius model reference is [OSRF car_demo](https://github.com/osrf/car_demo),
+with vehicle assets under [prius_description](https://github.com/osrf/car_demo/tree/master/prius_description).
+The original project targets ROS Kinetic and Gazebo Classic; this demonstration
+uses a locally adapted static SDF with ROS 2 Jazzy and Gazebo Harmonic.
 
-The original setup used the following local files:
-
-- ~/clearpath/robot.yaml
-- ~/jackal_sim/worlds/jackal_lab.sdf
-- ~/jackal_sim/models/prius_hybrid/prius_static.sdf
-- ~/jackal_sim/models/prius_hybrid/meshes/Hybrid.obj
-
-These robot/world/model assets are prerequisites and are not bundled in this two-file source upload. The custom world defines its ground plane and directional light inline in SDF/XML, avoiding unresolved external ground_plane and sun model references.
-
-The Prius model reference is [OSRF car_demo](https://github.com/osrf/car_demo). Its original ROS Kinetic / Gazebo Classic launch stack differs from this Jazzy / Harmonic setup; the demonstration used a locally adapted static Prius SDF.
-
-### Terminal 1 — Gazebo
+### Terminal 1 — Launch Gazebo and world
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-export GZ_SIM_RESOURCE_PATH="$HOME/jackal_sim/models:$GZ_SIM_RESOURCE_PATH"
+export GZ_SIM_RESOURCE_PATH="$HOME/jackal_sim/models${GZ_SIM_RESOURCE_PATH:+:$GZ_SIM_RESOURCE_PATH}"
+
+gz sdf -k ~/jackal_sim/worlds/jackal_lab.sdf
+gz sdf -k ~/jackal_sim/models/prius_hybrid/prius_static.sdf
 gz sim -r ~/jackal_sim/worlds/jackal_lab.sdf
 ```
 
-### Terminal 2 — Jackal
+Keep this terminal running.
+
+### Terminal 2 — Spawn Jackal
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -106,7 +121,9 @@ ros2 launch clearpath_gz robot_spawn.launch.py \
   x:=0.0 y:=0.0 z:=0.3 yaw:=0.0
 ```
 
-### Terminal 3 — Prius
+Keep this terminal running.
+
+### Terminal 3 — Spawn Prius
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -116,24 +133,28 @@ ros2 launch ros_gz_sim gz_spawn_model.launch.py \
   entity_name:=prius_01 x:=5.0 y:=2.0 z:=0.1 yaw:=0.0
 ```
 
-### Terminal 4 — Navigation
-
-From the folder containing the uploaded Python file:
+### Terminal 4 — Check the controller and run navigation
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-python3 jvg_astar_det.py
-```
 
-### Controller checks
+gz model -m 'j100_0000/robot' -p
+gz model -m prius_01 -p
 
-During development, the usual /j100_0000/cmd_vel route did not produce movement. Inspecting the controller and topic connections identified /j100_0000/platform/cmd_vel as the working direct input:
-
-```bash
 ros2 topic type /j100_0000/platform/cmd_vel
 ros2 control list_controllers -c /j100_0000/controller_manager
 ros2 node info /j100_0000/platform_velocity_controller
+
+python3 ~/jackal_sim/scripts/jvg_astar_det.py
 ```
+
+Before running navigation, confirm that both models are present, Gazebo
+is unpaused, and the platform velocity controller is active. The command
+topic should use `geometry_msgs/msg/TwistStamped`.
+
+During development, the usual `/j100_0000/cmd_vel` route did not produce
+movement. Inspecting the controller connections identified
+`/j100_0000/platform/cmd_vel` as the working direct input for this simulation.
 
 If ros2 control is unavailable, install ros-jazzy-ros2controlcli. Direct platform commands bypass the usual velocity multiplexer; this implementation is for simulation.
 
