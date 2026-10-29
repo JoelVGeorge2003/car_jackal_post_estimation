@@ -1,34 +1,25 @@
-# Jackal–Prius Navigation with A*
-
-**Joel V George**
+# Jackal to Car Navigation using pose with A*
 
 A ROS 2 simulation in which a Clearpath Jackal navigates around a parked Toyota Prius and aligns behind it. The implementation combines a vehicle-relative goal, a 2D A* planner and a waypoint-following controller.
 
-## Video of this working
-
-[Watch the working simulation on Google Drive](https://drive.google.com/file/d/1X7kNGQKWujHTdD4wnx8rM7u4VUJG2K8O/view)
-
-The video shows the Jackal–Prius navigation demonstration.
-
-## Files
+[Working video](https://drive.google.com/file/d/1X7kNGQKWujHTdD4wnx8rM7u4VUJG2K8O/view)
 
 - [jvg_astar_det.py](jvg_astar_det.py): Python implementation, including pose retrieval, goal calculation, A* planning and velocity control.
-- README.md: setup, implementation details and demonstration link.
 
 ## Environment
 
-| Component | Version / configuration |
+| Component | Version|
 | --- | --- |
-| Operating system | Ubuntu 24.04 ARM64 |
+| OS | Ubuntu 24.04 ARM64 |
 | ROS | ROS 2 Jazzy |
 | Simulator | Gazebo Harmonic |
 | Robot | Clearpath Jackal J100 |
-| Language | Python 3 with rclpy |
+| Language | Python 3 |
 | World | jackal_lab |
 | Jackal model | j100_0000/robot |
 | Car model | prius_01 |
 
-## How the implementation works
+## Implementation
 
 ### 1. Car and robot pose
 
@@ -39,11 +30,9 @@ gz model -m prius_01 -p
 gz model -m 'j100_0000/robot' -p
 ```
 
-It parses the model position and orientation and uses world-frame x, y and yaw for planar navigation. The car pose is read at startup, and the Jackal pose is updated during movement.
+It parses the model position and orientation and uses world-frame x, y and yaw for navigation. The car pose is read at startup, and the Jackal pose is updated during movement. **These are simulator ground-truth poses. This version does not estimate the car pose from images or LiDAR**, and it does not automatically detect or identify an unknown vehicle. The car model name, dimensions and forward-axis offset are supplied in the code.
 
-**These are simulator ground-truth poses.** This version does not estimate the car pose from images or LiDAR, and it does not automatically detect or identify an unknown vehicle. The car model name, dimensions and forward-axis offset are supplied in the code.
-
-### 2. Rear-approach target
+### Rear-approach
 
 The vehicle is approximated as a 4.5 m × 1.8 m rectangle. The script applies CAR_FRONT_AXIS_DEG to the model yaw to obtain the assumed front direction.
 
@@ -51,17 +40,15 @@ The target is placed behind the car center at a distance of half the car length 
 
 The uploaded script uses a −90° front-axis offset and a 1.0 m rear clearance. Verify the offset against the actual Prius mesh orientation. The target refers to the robot pose origin, rather than a measured bumper-to-bumper gap.
 
-### 3. A* planning
-
-- Build a 2D grid with 0.5 m resolution.
-- Represent the car as an oriented rectangular obstacle, inflated by 0.4 m.
-- Explore eight neighboring cells with Euclidean movement costs and heuristic.
+### A* does these
+- it built a 2D grid with 0.5 m resolution.
+- Represented the car as an oriented rectangular obstacle, inflated by 0.4 m.
+- Explored eight neighboring 2d cells with Euclidean movement costs and heuristic.
 - Prevent diagonal corner-cutting through blocked neighboring cells.
 - Reconstruct the route and simplify it using sampled collision checks along straight segments.
+- Only the modeled car footprint is included in the planner; other obstacles are not mapped.
 
-Only the modeled car footprint is included in the planner; other obstacles are not mapped.
-
-### 4. Motion control
+### Motion control
 
 The controller follows the path through TURN, DRIVE and FINAL_ALIGN states. It first turns toward a waypoint, then drives while correcting heading error, and finally aligns to the target yaw.
 
@@ -150,8 +137,3 @@ ros2 node info /j100_0000/platform_velocity_controller
 
 If ros2 control is unavailable, install ros-jazzy-ros2controlcli. Direct platform commands bypass the usual velocity multiplexer; this implementation is for simulation.
 
-## Limitations
-
-This prototype assumes a stationary car, known dimensions and a manually configured front axis. Collision checking uses an approximate inflated rectangle and sampled segments, rather than a full robot swept-volume model. It does not handle arbitrary scene obstacles, moving vehicles or continuous replanning.
-
-Gazebo pose polling can have variable latency, so a 10 Hz command publisher does not guarantee fresh feedback at that rate. The source was syntax-checked during packaging; no new ROS/Gazebo simulation run was performed.
